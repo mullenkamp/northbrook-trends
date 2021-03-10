@@ -1,0 +1,10 @@
+remotes:
+  - bucket: niwa-sos
+    delimiter: /
+    connection_config: https://b2.tethys-ts.xyz
+  - bucket: niwa-cliflo
+    delimiter: /
+    connection_config: https://b2.tethys-ts.xyz
+  - bucket: ecan-env-monitoring
+    delimiter: /
+    connection_config: https://b2.tethys-ts.xyz

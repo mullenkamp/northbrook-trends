@@ -1,0 +1,14 @@
+name: trends
+channels:
+- conda-forge
+- mullenkamp
+- defaults
+dependencies:
+- python=3.8
+- tethysts
+- fbprophet
+- plotly
+- matplotlib
+- statsmodels
+- seaborn
+- pyyaml
