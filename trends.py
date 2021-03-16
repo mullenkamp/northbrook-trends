@@ -196,7 +196,7 @@ precip_stns_gdf.to_file(os.path.join(base_dir, precip_stns_shp))
 
 trend_dict = {i: {} for i in groups}
 trend_m_dict = {i: {} for i in groups}
-# trend_y_dict = {i: {} for i in groups}
+trend_w_dict = {i: {} for i in groups}
 for g, refs in groups.items():
     print(g)
     for ref in refs:
@@ -208,35 +208,30 @@ for g, refs in groups.items():
         chng_pt = change_points[ref]
         # chng_pt = 0.1
         if not data.empty:
-            ## Yearly
-            # if g in [1, 2, 3]:
-            #     data1 = data.resample('D').mean()
-            #     data2 = data1.interpolate('time', limit=120).dropna()
-            #     data2 = data2.resample('A-JUN').mean()
-            # elif g == 7:
-            #     data2 = data.resample('A-JUN').sum()
-            #     # data2 = data1.interpolate('time', limit=1).dropna()
-            # else:
-            #     data2 = data.resample('A-JUN').mean()
-            #     # data2 = data1.interpolate('time', limit=1).dropna()
-
-            # m = Prophet(changepoint_prior_scale=chng_pt, changepoint_range=0.9, interval_width=0.95)
-            # m.fit(data2.reset_index())
-            # future = m.make_future_dataframe(periods=1, freq='A-JUN')
-            # forecast = m.predict(future)
-            # trend_y_dict[g].update({ref: (m, forecast)})
-
-            ## Monthly
-            if g in [1, 2, 3]:
+            ## weekly
+            if g == 7:
+                continue
+                # data2 = data.resample('W').sum()
+                # data2 = data1.interpolate('time', limit=1).dropna()
+            else:
                 data1 = data.resample('D').mean()
                 data2 = data1.interpolate('time', limit=120).dropna()
-                data2 = data2.resample('M').mean()
-            elif g == 7:
+                data2 = data2.resample('W').mean()
+
+            m = Prophet(changepoint_prior_scale=chng_pt, changepoint_range=0.9, interval_width=0.95)
+            m.fit(data2.reset_index())
+            future = m.make_future_dataframe(periods=1, freq='W')
+            forecast = m.predict(future)
+            trend_w_dict[g].update({ref: (m, forecast)})
+
+            ## Monthly
+            if g == 7:
                 data1 = data.resample('M').sum()
                 data2 = data1.interpolate('time', limit=3).dropna()
             else:
-                data1 = data.resample('M').mean()
-                data2 = data1.interpolate('time', limit=3).dropna()
+                data1 = data.resample('D').mean()
+                data2 = data1.interpolate('time', limit=120).dropna()
+                data2 = data2.resample('M').mean()
 
             m = Prophet(changepoint_prior_scale=chng_pt, changepoint_range=0.9, interval_width=0.95)
             m.fit(data2.reset_index())
@@ -246,8 +241,9 @@ for g, refs in groups.items():
 
             # Daily
             if g == 7:
-                data1 = data.resample('D').sum()
-                data2 = data1.interpolate('time', limit=120).dropna()
+                continue
+                # data1 = data.resample('D').sum()
+                # data2 = data1.interpolate('time', limit=120).dropna()
             else:
                 data1 = data.resample('D').mean()
                 data2 = data1.interpolate('time', limit=120).dropna()
@@ -261,27 +257,27 @@ for g, refs in groups.items():
             # m.plot(forecast)
             # m.plot_components(forecast)
 
-# group = 4
-
-# for f in trend_dict[group]:
-#     m1, fore = trend_dict[group][f]
-#     fig = plot.plot_components(m1, fore)
-#     fig2 = plot.plot(m1, fore)
-
-
 group = 7
+
+for f in trend_dict[group]:
+    m1, fore = trend_dict[group][f]
+    fig = plot.plot_components(m1, fore)
+    fig2 = plot.plot(m1, fore)
+
+
+# group = 1
 
 for f in trend_m_dict[group]:
     m1, fore = trend_m_dict[group][f]
     fig = plot.plot_components(m1, fore)
     fig2 = plot.plot(m1, fore)
 
-# group = 4
+# group = 1
 
-# for f in trend_y_dict[group]:
-#     m1, fore = trend_y_dict[group][f]
-#     fig = plot.plot_components(m1, fore)
-#     fig2 = plot.plot(m1, fore)
+for f in trend_w_dict[group]:
+    m1, fore = trend_w_dict[group][f]
+    fig = plot.plot_components(m1, fore)
+    fig2 = plot.plot(m1, fore)
 
 ################################################3
 ### Plots
@@ -317,9 +313,12 @@ for g in groups:
     y_label = y_axis_labels[g]
 
     data_list = []
-    for f in trend_m_dict[g]:
+    for f in trend_dict[g]:
 
-        m1, fore = trend_m_dict[g][f]
+        if g == 7:
+            m1, fore = trend_m_dict[g][f]
+        else:
+            m1, fore = trend_w_dict[g][f]
 
         data1 = fore[['ds', 'trend']].rename(columns={'ds': x_label, 'trend': f}).set_index(x_label).copy()
 
@@ -333,7 +332,7 @@ for g in groups:
 
     despine()
 
-    plot1.savefig(os.path.join(base_dir, 'plots', 'group_{g}_yearly_trend_from_monthly.png'.format(g=g)))
+    plot1.savefig(os.path.join(base_dir, 'plots2', 'group_{g}_yearly_trend_from_weekly_data.png'.format(g=g)))
 
 
 for g in groups:
@@ -356,7 +355,7 @@ for g in groups:
 
     despine()
 
-    plot1.savefig(os.path.join(base_dir, 'plots', 'group_{g}_yearly_trend_from_daily.png'.format(g=g)))
+    plot1.savefig(os.path.join(base_dir, 'plots2', 'group_{g}_yearly_trend_from_daily.png'.format(g=g)))
 
 ## seasonal trends
 set_style("white")
@@ -389,7 +388,10 @@ for g in groups:
     data_list = []
     for f in trend_dict[g]:
 
-        m1, fore = trend_dict[g][f]
+        if g == 7:
+            m1, fore = trend_m_dict[g][f]
+        else:
+            m1, fore = trend_w_dict[g][f]
 
         data1 = fore[['ds', 'yearly']].rename(columns={'ds': x_label, 'yearly': f}).set_index(x_label).copy()
         data2 = data1.groupby(data1.index.dayofyear).mean()
@@ -404,7 +406,7 @@ for g in groups:
 
     despine()
 
-    plot1.savefig(os.path.join(base_dir, 'plots', 'group_{g}_seasonality.png'.format(g=g)))
+    plot1.savefig(os.path.join(base_dir, 'plots2', 'group_{g}_seasonality.png'.format(g=g)))
 
 
 ## TS plots
@@ -420,7 +422,11 @@ x_label = x_axis_labels['ts_plot']
 for g in groups:
     for f in trend_dict[g]:
         y_label = y_axis_labels[g]
-        m, fcst = trend_dict[g][f]
+
+        if g == 7:
+            m, fcst = trend_m_dict[g][f]
+        else:
+            m, fcst = trend_w_dict[g][f]
 
         fig, ax = plt.subplots(figsize=(15, 10))
         # fig = plot.plot(m1, fore, ax=ax1, ylabel=y_label, xlabel=x_label)
@@ -453,7 +459,7 @@ for g in groups:
         plot1 = ax.get_figure()
         plt.close()
 
-        plot1.savefig(os.path.join(base_dir, 'plots', f.replace('/', '_')+'_ts_plot.png'))
+        plot1.savefig(os.path.join(base_dir, 'plots2', f.replace('/', '_')+'_ts_plot.png'))
 
 # for g in groups:
 #     y_label = y_axis_labels[g]
