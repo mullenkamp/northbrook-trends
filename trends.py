@@ -455,7 +455,8 @@ for freq, trend_dict, in data_groups.items():
 
                 ax1 = plot_results(m1, fore, x_label, y_label, 'Site: ' + f, color)
                 plot1 = ax1.get_figure()
-                plot1.savefig(os.path.join(plot_path, 'group_{g}_results_from_{freq}_data.png'.format(g=g, freq=freq)))
+                site_ref = f.replace('/', '-')
+                plot1.savefig(os.path.join(plot_path, 'group_{g}_{site}_results_from_{freq}_data.png'.format(g=g, freq=freq, site=site_ref)))
                 plt.close()
                 ax1 = None
 
