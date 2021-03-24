@@ -11,3 +11,4 @@ dependencies:
 - statsmodels
 - seaborn
 - pyyaml
+- geopandas

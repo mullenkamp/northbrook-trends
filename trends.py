@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from fbprophet import Prophet, plot
 import io
-import yaml
+# import yaml
 from tethysts import Tethys
 import xarray as xr
 import copy
@@ -31,11 +31,12 @@ pd.options.display.max_columns = 10
 
 base_dir = os.path.realpath(os.path.dirname(__file__))
 
-with open(os.path.join(base_dir, 'parameters.yml')) as param:
-    param = yaml.safe_load(param)
+# with open(os.path.join(base_dir, 'parameters.yml')) as param:
+#     param = yaml.safe_load(param)
 
+remotes = [{'bucket': 'ecan-env-monitoring', 'connection_config': 'https://b2.tethys-ts.xyz'}]
 
-mcmc_samples = 0 # Change to 300 to add uncertainty analysis to the outputs; adds a lot more processing time.
+mcmc_samples = 0 # Change to 300 to add uncertainty analysis to the outputs; adds a lot more processing time (~1 hour).
 
 owner = 'Environment Canterbury'
 product_code = 'quality_controlled_data'
@@ -46,7 +47,6 @@ gwl_rec_ref = ['M35/2679', 'M35/0366']
 # precip_ref = ['322410', '322211', '322110', '321212', '321310']
 precip_ref = ['322110', '321310']
 
-# s1 = '1500fc71aab1fb7d0d4786a0'
 
 groups = {1: ['M35/2679', 'M35/0366', 'M35/0472', 'M35/0538'], 2: ['M35/0312', 'M35/0222'], 3: ['M34/0232', 'M34/0207'], 4: ['66204', '66213', '66210'], 5: ['66417'], 6: ['66214'], 7: ['322110', '321310']}
 
@@ -163,7 +163,6 @@ def plot_seasonality(m, fcst, x_label, y_label, legend_label, color='#0072B2', a
     """
     set_style("white")
     set_style("ticks")
-    # set_context('poster')
     set_context('talk')
 
     artists = []
@@ -198,10 +197,41 @@ def plot_seasonality(m, fcst, x_label, y_label, legend_label, color='#0072B2', a
     return ax
 
 
+def plot_results(m, fcst, x_label, y_label, title_label, color='#0072B2', ax=None, uncertainty=True, figsize=(15, 10)):
+    """
+
+    """
+    set_style("white")
+    set_style("ticks")
+    set_context('talk')
+
+    if not ax:
+        fig, ax = plt.subplots(figsize=(15, 10))
+    fcst_t = fcst['ds'].dt.to_pydatetime()
+    ax.plot(m.history['ds'].dt.to_pydatetime(), m.history['y'], 'k.')
+    ax.plot(fcst_t, fcst['yhat'], ls='-', c=color)
+    if uncertainty and m.uncertainty_samples:
+        ax.fill_between(fcst_t, fcst['yhat_lower'], fcst['yhat_upper'],
+                        color=color, alpha=0.2)
+    # Specify formatting to workaround matplotlib issue #12925
+    locator = AutoDateLocator(interval_multiples=False)
+    formatter = AutoDateFormatter(locator)
+    ax.xaxis.set_major_locator(locator)
+    ax.xaxis.set_major_formatter(formatter)
+    ax.grid(True, which='major', c='gray', ls='-', lw=1, alpha=0.2)
+    ax.legend(['Measured Data', 'Modelled Data', 'Uncertainty Bounds'], loc='upper right')
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    plt.title(title_label)
+    despine()
+    plt.tight_layout()
+
+    return ax
+
 ##################################
 ### Get data
 
-tethys1 = Tethys(param['remotes'])
+tethys1 = Tethys(remotes)
 
 ## Datasets
 datasets = tethys1.datasets.copy()
@@ -268,7 +298,7 @@ for stn_id, results in precip_dict.items():
 
 precip1 = pd.concat(precip_list)
 
-
+# Combine results and stations
 all_data = pd.concat([flow1, gwl1, precip1])
 # all_data = pd.concat([flow1, gwl1])
 all_stns = flow_stns.copy()
@@ -287,8 +317,6 @@ precip_stns_gdf.to_file(os.path.join(base_dir, precip_stns_shp))
 #############################################
 ### Analysis
 
-# TODO: rework to have all sites go through weekly and monthly trend analysis
-
 # trend_dict = {i: {} for i in groups}
 trend_m_dict = {i: {} for i in groups}
 trend_w_dict = {i: {} for i in groups}
@@ -303,8 +331,8 @@ for g, refs in groups.items():
         chng_pt = change_points[ref]
         # chng_pt = 0.1
         if not data.empty:
-            ## weekly
             if g != 7:
+                # Weekly
                 data1 = data.resample('D').mean()
                 data2 = data1.interpolate('time', limit=120).dropna()
                 data2 = data2.resample('W').mean()
@@ -314,6 +342,15 @@ for g, refs in groups.items():
                 future = m.make_future_dataframe(periods=1, freq='W')
                 forecast = m.predict(future)
                 trend_w_dict[g].update({ref: (m, forecast)})
+
+                # Monthly
+                data2 = data2.resample('M').mean()
+
+                m = Prophet(changepoint_prior_scale=chng_pt, changepoint_range=0.9, interval_width=0.95, mcmc_samples=mcmc_samples)
+                m.fit(data2.reset_index())
+                future = m.make_future_dataframe(periods=1, freq='W')
+                forecast = m.predict(future)
+                trend_m_dict[g].update({ref: (m, forecast)})
             else:
                 data1 = data.resample('M').sum()
                 data2 = data1.interpolate('time', limit=3).dropna()
@@ -325,6 +362,7 @@ for g, refs in groups.items():
                 trend_m_dict[g].update({ref: (m, forecast)})
 
 
+### Save results
 
 # group = 7
 
@@ -341,39 +379,17 @@ for g, refs in groups.items():
 #     fig = plot.plot_components(m1, fore)
 #     fig2 = plot.plot(m1, fore)
 
-group = 1
+# group = 1
 
-for f in trend_w_dict[group]:
-    m1, fore = trend_w_dict[group][f]
-    fig = plot.plot_components(m1, fore)
-    fig2 = plot.plot(m1, fore)
+# for f in trend_w_dict[group]:
+#     m1, fore = trend_w_dict[group][f]
+#     fig = plot.plot_components(m1, fore)
+#     fig2 = plot.plot(m1, fore)
 
 ################################################3
 ### Plots
 
-## Yearly trends
-# set_style("white")
-# set_style("ticks")
-# set_context('talk')
 pal1 = color_palette()
-
-x_label = x_axis_labels['yearly_trend']
-data_label = 'Yearly Trend'
-
-# for g in groups:
-#     for f in trend_m_dict[g]:
-#         y_label = y_axis_labels[g]
-#         m1, fore = trend_m_dict[g][f]
-
-#         data1 = fore[['ds', 'trend']].rename(columns={'ds': x_label, 'trend': data_label}).set_index(x_label).copy()
-
-#         ax1 = data1.plot(ylabel=y_label, color=pal1[0], title='Site: ' + f, figsize=(15, 10))
-#         plt.tight_layout()
-#         plot1 = ax1.get_figure()
-
-#         despine()
-
-#         plot1.savefig(os.path.join(base_dir, 'plots', f.replace('/', '_')+'_yearly_trend.png'))
 
 now1 = pd.Timestamp.now().strftime('%Y-%m-%d')
 
@@ -394,6 +410,9 @@ for freq, trend_dict, in data_groups.items():
 
             colors_dict = {sites[i]: pal1[i] for i in range(len(sites))}
 
+            ## Trend plot
+            x_label = x_axis_labels['yearly_trend']
+
             for f in sites:
                 m1, fore = results[f]
 
@@ -405,77 +424,40 @@ for freq, trend_dict, in data_groups.items():
             plt.legend()
 
             plot1.savefig(os.path.join(plot_path, 'group_{g}_trend_from_{freq}_data.png'.format(g=g, freq=freq)))
+            plt.close()
             ax1 = None
+
+            ## Seasonality plot
+            if freq == 'weekly':
+                x_label = x_axis_labels['seasonality']
+
+                for f in sites:
+                    m1, fore = results[f]
+
+                    color = colors_dict[f]
+
+                    ax1 = plot_seasonality(m1, fore, x_label, y_label, f, ax=ax1, color=color)
+
+                plot1 = ax1.get_figure()
+                plt.legend()
+
+                plot1.savefig(os.path.join(plot_path, 'group_{g}_seasonality_from_{freq}_data.png'.format(g=g, freq=freq)))
+                plt.close()
+                ax1 = None
+
+            ## Results plot
+            x_label = x_axis_labels['ts_plot']
 
             for f in sites:
                 m1, fore = results[f]
 
                 color = colors_dict[f]
 
-                ax1 = plot_seasonality(m1, fore, x_label, y_label, f, ax=ax1, color=color)
-
-            plot1 = ax1.get_figure()
-            plt.legend()
-
-            plot1.savefig(os.path.join(plot_path, 'group_{g}_seasonality_from_{freq}_data.png'.format(g=g, freq=freq)))
-            ax1 = None
-
-
-## TS plots
-set_style("white")
-set_style("ticks")
-# set_context('poster')
-set_context('talk')
-pal1 = color_palette()
-
-x_label = x_axis_labels['ts_plot']
-# data_label = 'Seasonality'
-
-for g in groups:
-    for f in trend_dict[g]:
-        y_label = y_axis_labels[g]
-
-        if g == 7:
-            m, fcst = trend_m_dict[g][f]
-        else:
-            m, fcst = trend_w_dict[g][f]
-
-        fig, ax = plt.subplots(figsize=(15, 10))
-        # fig = plot.plot(m1, fore, ax=ax1, ylabel=y_label, xlabel=x_label)
-        # ax1.legend(loc='upper right')
-
-        fcst_t = fcst['ds'].dt.to_pydatetime()
-        ax.plot(m.history['ds'].dt.to_pydatetime(), m.history['y'], 'k.')
-        ax.plot(fcst_t, fcst['yhat'], ls='-', c='#0072B2')
-        # ax.plot(fcst_t, fcst['cap'], ls='--', c='k')
-        # ax.plot(fcst_t, fcst['floor'], ls='--', c='k')
-        if m.uncertainty_samples:
-            ax.fill_between(fcst_t, fcst['yhat_lower'], fcst['yhat_upper'],
-                            color='#0072B2', alpha=0.2)
-        # Specify formatting to workaround matplotlib issue #12925
-        locator = AutoDateLocator(interval_multiples=False)
-        formatter = AutoDateFormatter(locator)
-        ax.xaxis.set_major_locator(locator)
-        ax.xaxis.set_major_formatter(formatter)
-        ax.grid(True, which='major', c='gray', ls='-', lw=1, alpha=0.2)
-        ax.legend(['Measured Data', 'Modelled Data', 'Uncertainty Bounds'], loc='upper right')
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
-
-        # data1 = fore[['ds', 'trend']].rename(columns={'ds': x_label, 'trend': data_label}).set_index(x_label).copy()
-
-        # ax1 = data1.plot(ylabel=y_label, color=pal1[0], title='Site: ' + f, figsize=(15, 10))
-        plt.title('Site: ' + f)
-        despine()
-        plt.tight_layout()
-        plot1 = ax.get_figure()
-        plt.close()
-
-        plot1.savefig(os.path.join(base_dir, 'plots2', f.replace('/', '_')+'_ts_plot.png'))
-
-
-
-
+                ax1 = plot_results(m1, fore, x_label, y_label, 'Site: ' + f, color)
+                plot1 = ax1.get_figure()
+                plot1.savefig(os.path.join(plot_path, 'group_{g}_results_from_{freq}_data.png'.format(g=g, freq=freq)))
+                plt.close()
+                ax1 = None
 
 
 
